@@ -25,38 +25,37 @@ contains useful data that are too often computed on the client, like a palette
         client only blocks in it's preferred format.
 
 - "Native" lossy (tldr: reduce GPU memory usage by storing compressed mipmaps)
-    * Same formats as defined in the Vulkan specs (BCn, ETC, ETC2/EAC, ASTC).
     * Compressed in a random access format that GPU can easily work with.
     * It reduces GPU memory usage and archive size, but will have
         a small impact on draw performances.
+    * Same formats as defined in the Vulkan specs (BCn, ETC, ETC2/EAC, ASTC).
     * If not compressed by LZ4, blocks' data could be written directly to GPU
         mapped memory. No copy buffer, no decode.
 
 - "Lossless" (tldr: raw data compressed)
     * Raw RGB(A) data (may be compressed using LZ4).
-    * FIXME PNG-like filtering to optimize LZ4?
+    * Can be filtered, like PNG's "sub", to increase LZ4 efficiency.
+    * Failsafe for systems not supporting other texture compression fomats
+        in the archive.
 
 - Mipmaping (tldr: allowing progressive rendering, at size cost)
     * Precomputed mipmaps may be stored along with the source image.
     * Stored from lowest to highest level of detail.
     * Set your max LoD bias, to latest read mipmap for progressive rendering.
     * Client may stop to read when LoD is satisfactory.
-    * Some mip levels can be omitted, it will be ok as long as you keep track
-        of your LoD bias while the file is loading.
+    * Some mip levels can be omitted, it will be ok as long as you update your
+        LoD bias while the file is loading.
 
 - Chroma subsampling (tldr: reduce GPU memory usage at cost of draw time)
     * The image is decomposed in two textures using Y+CgCo(A), one grayscale at
-        the resolution of the image, and one two channels texture for the
-        chromas+alpha at half the resolution of the image.
+        the resolution of the image, and one 2/3 channels texture for the
+        chromas(+alpha) at half the resolution of the image.
     * It requires work in fragment shader, but will reduce GPU memory usage
         and archive size.
-    * If present, the alpha channel is stored with the chromas, at half the
-        resolution.
 
 - Palette (tldr: palette encoded to reduce file size at cost of draw time)
     * The image is splitted in two textures, a one channel texture at full
-        resolution, and a 2/3 channels palette (1px wide and max 1024px tall),
-        to encode the main texture and reduce it's size.
+        resolution, and a 2/3 channels palette (1px wide and max 256px tall).
     * It requires work in fragment shader, but will reduce GPU memory usage
         and archive size.
     * Can be used in combination with chroma-subsampling (on the chromas+alpha).
@@ -70,34 +69,36 @@ contains useful data that are too often computed on the client, like a palette
         padding.
 
 File structure
------------
+--------------
 
-    header:
+    Header:
         signature
         image info
         for each texture
             texture info
-    for each textures
-        for each mipmap (from lowest to highest level of detail)
-            for each array slice (sorted by index)
-                for each archive formats (no particular order)
-                    block header
-                    data
+
+    Then the blocks, that will be interleaved:
+        for each textures
+            for each mipmap (from lowest to highest level of detail)
+                for each array slice (sorted by index)
+                    for each archive formats (no particular order)
+                        block info
+                        data
 
 Blocks are interleaved, here's a chroma-subsampled and mipmapped image with
 a 4 slices animation:
 
-    tex0_mip0_sli0_s3tc
-    tex1_mip0_sli0_s3tc // Could already display something
-    tex0_mip0_sli1_s3tc
-    tex1_mip0_sli1_s3tc // Could start playing animation
-    tex0_mip0_sli2_s3tc
-    tex1_mip0_sli2_s3tc
-    tex0_mip0_sli3_s3tc
-    tex1_mip0_sli3_s3tc // Can already play the full animation
+    tex0_mip8_sli0
+    tex1_mip8_sli0  Can already display something
+    tex0_mip8_sli1
+    tex1_mip8_sli1  Can start playing animation
+    tex0_mip8_sli2
+    tex1_mip8_sli2
+    tex0_mip8_sli3
+    tex1_mip8_sli3  Can already play the full animation
 
-    tex0_mip1_sli0_s3tc // Continue reading to increase LoD
+    tex0_mip7_sli0  Continue reading until client is satisfied by LoD
     ...
 
+See gia.hpp for a detail and extra info.
 Integers in the archive are little endian.
-See gia.hpp for a detail of the extra info.

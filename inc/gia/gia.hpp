@@ -23,7 +23,7 @@
 namespace gia {
 
 static const uint8_t SIGNATURE[6] = {0x90, 'G', 'I', 'A', '\n', '\n'};
-static const uint8_t LAST_VERSION = 1;
+static const uint8_t FORMAT_REVISION = 1;
 
 enum pixel_format_t : uint8_t {
   BC4_L8        = 0x01,
@@ -80,7 +80,7 @@ enum image_flags_t : uint8_t {
 };
 
 struct Header {
-  uint8_t version_ = gia::LAST_VERSION;
+  uint8_t version_ = gia::FORMAT_REVISION;
 
   image_flags_t flags_;
 
@@ -98,13 +98,13 @@ struct Header {
   /** CRC64 of all the blocks in the archive. */
   uint64_t crc_;
 
-  /** Most used colors in the image, in RGBA format. */
-  uint32_t colors_[8];
+  /** Image colors swatches, works similarly to Android's Palette.
+   * From index 0 to 6: vibrant, vibrant+, vibrant-, muted, muted+, muted-. */
+  uint32_t swatches_[6];
 };
 
-
 enum texture_flags_t : uint8_t {
-  /** This texture is the luminance, has an extra texture for chromas+alpha. */
+  /** This texture is luminance, has an extra texture for chromas(+alpha). */
   CHROMA_SUBSAMPLED = 0x01,
 
   /** This texture is palette coded, has an extra texture for palette book. */
@@ -112,7 +112,7 @@ enum texture_flags_t : uint8_t {
 
   /** This texture should be blended with Header::colors_[0] when rendered.
    * Only useful for L/LA textures, so that we can add some color on it. */
-  FILTERED          = 0x04,
+  TINTED            = 0x04,
 };
 
 struct TextureInfo {
@@ -130,20 +130,28 @@ struct TextureInfo {
   /** Number of frames for this texture. 1 == no animation */
   uint16_t slices_;
 
-  /** Size of the image (maximum lod mipmap). */
+  // Some padding to align this struct to 4 bytes
+  uint16_t reserved_;
+
+  /** Size of the texture (maximum lod mipmap). */
   uint16_t width_, height_;
 };
 
 enum block_flags_t: uint8_t {
   /** Block data is compressed using LZ4. */
-  COMPRESSED = 0x01,
+  COMPRESSED   = 0x01,
+
+  /** Block data is pre-filtered using an equivalent of the PNG "sub" filter
+   * method. Will need an extra step when en/decoding. Note: raw only, probably
+   * not a good idea with block based formats. */
+  SUB_FILTERED = 0x02,
 
   /** Storage will be cleared to the specified color. */
-  CLEAR      = 0x02,
+  CLEAR        = 0x04,
 
-  /** Storage will be cleared to the previous slice.
-   * No blending. Can't be set on slice 0. */
-  COPY       = 0x04,
+  /** Storage will be cleared to the previous slice. Can't be set on slice 0.
+   * No blending with previous frame, all channels are replaced. */
+  COPY         = 0x08,
 };
 
 struct Block {
@@ -153,20 +161,19 @@ struct Block {
 
   block_flags_t flags_;
 
-  /** Corresponding texture ID. */
   uint8_t textureId_;
   uint8_t mipLevel_;
   uint16_t slice_;
 
-  /** Time in ms that this frame should long. */
+  /** Time in ms that this frame should long.
+   * If 0, the animation should stop looping. */
   uint16_t delay_;
-  // FIXME Repeated for each mip, but don't want to make a table for that...
 
   uint16_t width_, height_;
 
-  /** Data bounds in the image (might be smaller than this mipmap size), you
-   * can either clear the rest of the data, or copy them from the previous
-   * frame using flags. If neither clear nor copy flags are set, the extent is
+  /** Data bounds in the image (might be smaller than this mip size), you can
+   * either clear the rest of the data, or copy them from the previous frame
+   * using flags. If neither clear nor copy flags are set, the extent is
    * ignored, we expect the full pixel data for it. */
   uint16_t extentX1_, extentY1_, extentX2_, extentY2_;
 
@@ -176,6 +183,11 @@ struct Block {
   /** The size in the archive file of the data (so after compression, if
    * enabled). Can be 0, for image with just one color, we can just clear. */
   uint32_t dataSize_;
+
+  /** The format has an hidden uint32_t here if the COMPRESSED flag is enabled,
+   * representing the size of the uncompressed data. */
+
+  /** Then comes the data in the file. Followed by other blocks. */
 };
 
 }  // namespace gia
