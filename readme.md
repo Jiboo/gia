@@ -1,41 +1,32 @@
 The GIA (GPU Image Archive) file format
 ===================
 
-This project is a hobby experiment.
-
-The goal is to create a lossy image format GPU friendly, minimizing the time
-required for decode, and be able to display the image ASAP.
+The goal is to create an image format GPU friendly. This is a hobby experiment.
 
 Features
 --------
 
 GIA archives are supposed to be processed once and then distributed. The header
-contains useful data that are too often computed on the client, like a palette
-(as in Android's Palette API), a phash.org, opaque flag, ...
+contains useful data that are too often computed on the client (like Android's
+Palette API, a phash.org, opaque flag, ...) and a list of data "blocks".
 
 - Blocks (tldr: file composed of skippable blobs, may be in different formats)
     * GIA Is an Archive, not an image format.
     * The archive is streamable, it consist of a header and a list of blocks.
     * Intended to contain the same image using different texture compression
-        algorithm, and raw pixels data as backup.
-    * Blocks data (independently of it's format) may be optionally compressed
-        using LZ4.
+        codecs, and raw pixels data as backup.
     * A decoder may easily ignore blocks in an unsupported/unpreferred format.
     * A server could easily construct a new GIA on the fly by transferring to
         client only blocks in it's preferred format.
 
-- "Native" lossy (tldr: reduce GPU memory usage by storing compressed mipmaps)
+- "Native" lossy (tldr: block texture compression, BCn and ASTC)
     * Compressed in a random access format that GPU can easily work with.
     * It reduces GPU memory usage and archive size, but will have
         a small impact on draw performances.
-    * Same formats as defined in the Vulkan specs (BCn, ETC, ETC2/EAC, ASTC).
-    * If not compressed by LZ4, blocks' data could be written directly to GPU
-        mapped memory. No copy buffer, no decode.
 
-- "Lossless" (tldr: raw data compressed)
+- "Lossless" (tldr: raw pixel data)
     * Raw RGB(A) data (may be compressed using LZ4).
-    * Can be filtered, like PNG's "sub", to increase LZ4 efficiency.
-    * Failsafe for systems not supporting other texture compression fomats
+    * Failsafe for systems not supporting other texture compression codecs
         in the archive.
 
 - Mipmaping (tldr: allowing progressive rendering, at size cost)
@@ -45,6 +36,16 @@ contains useful data that are too often computed on the client, like a palette
     * Client may stop to read when LoD is satisfactory.
     * Some mip levels can be omitted, it will be ok as long as you update your
         LoD bias while the file is loading.
+
+- Stream arrangements (tldr: improve compression, at decode speed cost)
+    * De-interleaved texture blocks colors and selector bits, so we have a
+        stream of colors and selector bits, instead of having them interleaved
+        for each blocks.
+    * Per-channel data encoding, this is a technique similar to PNG "sub"
+        filtering, we encode the delta of the previous (on the left) pixel,
+        instead of specifying the color every time, to increase duplicate rate.
+    * Thus techniques require extra steps while decoding, but may not be
+        applied on first mip levels, so that you can display something asap.
 
 - Chroma subsampling (tldr: reduce GPU memory usage at cost of draw time)
     * The image is decomposed in two textures using Y+CgCo(A), one grayscale at

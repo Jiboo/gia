@@ -79,7 +79,7 @@ enum image_flags_t : uint8_t {
   ANIMATED          = 0x20,
 };
 
-struct Header {
+struct ImageInfo {
   uint8_t version_ = gia::FORMAT_REVISION;
 
   image_flags_t flags_;
@@ -130,31 +130,34 @@ struct TextureInfo {
   /** Number of frames for this texture. 1 == no animation */
   uint16_t slices_;
 
-  // Some padding to align this struct to 4 bytes
-  uint16_t reserved_;
-
   /** Size of the texture (maximum lod mipmap). */
   uint16_t width_, height_;
 };
 
 enum block_flags_t: uint8_t {
   /** Block data is compressed using LZ4. */
-  COMPRESSED   = 0x01,
+  COMPRESSED    = 0x01,
+
+  /** Block data are de-interleaved, instead of having a stream of texture
+   * blocks consisting of the colors and selector pixels, the stream will have
+   * all colors, and all pixel selectors of all blocks in the mip.
+   * This require an extra decode step, but will optimize LZ4 compression. */
+  DEINTERLEAVED = 0x02,
 
   /** Block data is pre-filtered using an equivalent of the PNG "sub" filter
-   * method. Will need an extra step when en/decoding. Note: raw only, probably
-   * not a good idea with block based formats. */
-  SUB_FILTERED = 0x02,
+   * method. Will need an extra step when en/decoding. Note: Probably not a
+   * good idea on interleaved blocks. */
+  SUB_FILTERED  = 0x04,
 
   /** Storage will be cleared to the specified color. */
-  CLEAR        = 0x04,
+  CLEAR         = 0x40,
 
   /** Storage will be cleared to the previous slice. Can't be set on slice 0.
    * No blending with previous frame, all channels are replaced. */
-  COPY         = 0x08,
+  COPY          = 0x80,
 };
 
-struct Block {
+struct BlockInfo {
   /** Format of this block, a block for the same texture+mip+slice might be
    * present in the file, with a different format. */
   pixel_format_t format_;
@@ -185,7 +188,8 @@ struct Block {
   uint32_t dataSize_;
 
   /** The format has an hidden uint32_t here if the COMPRESSED flag is enabled,
-   * representing the size of the uncompressed data. */
+   * representing the size of the uncompressed data. Thus 4 bytes are counted
+   * in dataSize_, if present. */
 
   /** Then comes the data in the file. Followed by other blocks. */
 };
